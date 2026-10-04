@@ -207,8 +207,11 @@ int main(int argc, char **argv) {
   bool slow_held = false;
   struct input_event ev;
 
+  bool super_held = false;
+  bool ctrl_held = false;
+  bool shift_held = false;
+
   while (read(keyboard_fd, &ev, sizeof(ev)) == (ssize_t)sizeof(ev)) {
-    // Drop syn events in loop - our emit_* helpers generate clean syn reports
     if (ev.type != EV_KEY) {
       continue;
     }
@@ -217,22 +220,48 @@ int main(int argc, char **argv) {
     bool initial_press = (ev.value == 1);
     bool repeat = (ev.value == 2);
 
-    // Detect Left Alt
-    if (ev.code == KEY_LEFTALT) {
-      left_alt_held = pressed;
-      if (!left_alt_held) {
-        slow_held = false;
-      }
-      continue; // Do NOT forward Left Alt to OS
+    // 1. Track modifier states and always forward them to the OS
+    if (ev.code == KEY_LEFTMETA || ev.code == KEY_RIGHTMETA) {
+      super_held = pressed;
+      emit_key(ui_fd, ev.code, ev.value);
+      continue;
     }
-
-    // --- NORMAL TYPING MODE (Left Alt NOT held) ---
-    if (!left_alt_held) {
+    if (ev.code == KEY_LEFTCTRL || ev.code == KEY_RIGHTCTRL) {
+      ctrl_held = pressed;
+      emit_key(ui_fd, ev.code, ev.value);
+      continue;
+    }
+    if (ev.code == KEY_LEFTSHIFT || ev.code == KEY_RIGHTSHIFT) {
+      shift_held = pressed;
       emit_key(ui_fd, ev.code, ev.value);
       continue;
     }
 
-    // --- MOUSE MODE (Left Alt IS held) ---
+    // 2. Handle Left Alt (Only ONE check)
+    if (ev.code == KEY_LEFTALT) {
+      // If Super, Ctrl, or Shift is currently down, treat Left Alt as standard
+      // Alt
+      if (super_held || ctrl_held || shift_held) {
+        left_alt_held = false;
+        emit_key(ui_fd, ev.code, ev.value);
+        continue;
+      }
+
+      // Otherwise, engage Mouse Mode and swallow Left Alt
+      left_alt_held = pressed;
+      if (!left_alt_held) {
+        slow_held = false;
+      }
+      continue;
+    }
+
+    // 3. Normal typing mode (Left Alt is NOT held, or a modifier canceled it)
+    if (!left_alt_held || super_held || ctrl_held || shift_held) {
+      emit_key(ui_fd, ev.code, ev.value);
+      continue;
+    }
+
+    // 4. Mouse mode (Left Alt held alone)
     if (ev.code == KEY_F) {
       slow_held = pressed;
       continue;
@@ -267,7 +296,7 @@ int main(int argc, char **argv) {
         }
         break;
       default:
-        // Drop other keys to avoid unwanted typing
+        // Swallow other keys while Left Alt is held
         break;
       }
 
