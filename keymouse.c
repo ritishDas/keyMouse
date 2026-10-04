@@ -14,8 +14,8 @@
 #include <unistd.h>
 
 enum {
-  FAST_STEP = 12,
-  SLOW_STEP = 3,
+  FAST_STEP = 30,
+  SLOW_STEP = 12,
 };
 
 #define BITS_PER_LONG (sizeof(unsigned long) * 8)
